@@ -30,6 +30,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="plan"
+        options={{
+          title: "Plan",
+          tabBarIcon: ({ color }) => <TabIcon name="calendar" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="two"
         options={{
           title: "Profile",

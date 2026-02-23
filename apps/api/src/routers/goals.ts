@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { goals, sports } from "../db/schema";
+import { generatePlan } from "../services/planGenerator";
 import { protectedProcedure, router } from "../trpc";
 
 export const goalsRouter = router({
@@ -49,6 +50,11 @@ export const goalsRouter = router({
           description: input.description,
         })
         .returning();
+
+      // Kick off plan generation immediately — non-blocking, errors are logged
+      generatePlan({ userId: ctx.user.id, goalId: goal.id }).catch((err) =>
+        console.error("Plan generation failed for goal", goal.id, err),
+      );
 
       return goal;
     }),
