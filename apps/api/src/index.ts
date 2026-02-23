@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { trpcServer } from "@hono/trpc-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createContext } from "./context";
 import { appRouter } from "./routers";
 
 const app = new Hono();
@@ -12,6 +13,7 @@ app.use(
   "/trpc/*",
   trpcServer({
     router: appRouter,
+    createContext: (opts) => createContext({ req: opts.req }),
   })
 );
 

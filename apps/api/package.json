@@ -2,11 +2,19 @@
   "name": "@athme/api",
   "version": "0.0.1",
   "private": true,
+  "exports": {
+    ".": "./src/routers/index.ts"
+  },
+  "types": "./src/routers/index.ts",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsx src/index.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "tsx --env-file=.env src/index.ts",
     "test": "vitest run",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx src/db/seed/index.ts"
   },
   "dependencies": {
     "@athme/core": "workspace:*",
