@@ -34,6 +34,7 @@ export function Navbar({ email }: NavbarProps) {
             { label: "My Plan", href: "/plan" },
             { label: "Exercises", href: "/exercises" },
             { label: "Progress", href: "/progress" },
+            { label: "Profile", href: "/profile/edit" },
           ].map((link) => (
             <Link
               key={link.href}

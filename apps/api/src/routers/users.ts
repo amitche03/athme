@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { users } from "../db/schema";
 import { protectedProcedure, router } from "../trpc";
 
@@ -28,4 +29,30 @@ export const usersRouter = router({
 
     return created;
   }),
+
+  updateProfile: protectedProcedure
+    .input(
+      z.object({
+        displayName: z.string().min(1).max(100).optional(),
+        heightCm: z.number().int().min(50).max(300).optional(),
+        weightKg: z.number().min(20).max(500).optional(),
+        dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        gender: z.enum(["male", "female", "other", "prefer_not_to_say"]).optional(),
+        fitnessLevel: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+        trainingDaysPerWeek: z.number().int().min(1).max(7).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { weightKg, ...rest } = input;
+      const [updated] = await ctx.db
+        .update(users)
+        .set({
+          ...rest,
+          ...(weightKg !== undefined ? { weightKg: weightKg.toString() } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, ctx.user.id))
+        .returning();
+      return updated;
+    }),
 });

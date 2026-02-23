@@ -1,10 +1,6 @@
-import FontAwesome from "@expo/vector-icons/FontAwesome";
-import { useFonts } from "expo-font";
-import { Redirect, Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
-import "react-native-reanimated";
-
+import { View } from "react-native";
 import { useAuth } from "@/hooks/useAuth";
 import { TRPCProvider } from "@/lib/trpc";
 
@@ -14,24 +10,7 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
-SplashScreen.preventAutoHideAsync();
-
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
-    ...FontAwesome.font,
-  });
-
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
-
-  if (!loaded) return null;
-
   return (
     <TRPCProvider>
       <RootLayoutNav />
@@ -41,18 +20,30 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const { session, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
 
-  // Wait for Supabase to resolve the session before deciding where to go
-  if (loading) return null;
+  useEffect(() => {
+    if (loading) return;
 
-  // Not signed in — redirect to auth flow
-  if (!session) return <Redirect href="/(auth)/sign-in" />;
+    const inAuthGroup = segments[0] === "(auth)";
+
+    if (!session && !inAuthGroup) {
+      router.replace("/(auth)/sign-in");
+    } else if (session && inAuthGroup) {
+      router.replace("/(tabs)");
+    }
+  }, [session, loading, segments]);
+
+  if (loading) return <View style={{ flex: 1, backgroundColor: "#0D0D0D" }} />;
 
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="goals" options={{ headerShown: false }} />
+      <Stack.Screen name="workouts" options={{ headerShown: false }} />
+      <Stack.Screen name="profile" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: "modal" }} />
     </Stack>
   );

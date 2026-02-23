@@ -45,7 +45,13 @@ function PhaseBadge({ phase }: { phase: string }) {
 
 // ─── Week detail panel ────────────────────────────────────────────────────────
 
-function WeekDetail({ weekId }: { weekId: string }) {
+function WeekDetail({
+  weekId,
+  loggedWorkoutIds,
+}: {
+  weekId: string;
+  loggedWorkoutIds: Set<string>;
+}) {
   const { data, isLoading } = trpc.plans.getWeek.useQuery({ weekId });
 
   if (isLoading) {
@@ -64,32 +70,50 @@ function WeekDetail({ weekId }: { weekId: string }) {
 
   return (
     <div className="mt-4 space-y-3">
-      {data.workouts.map(({ workout, exercises }) => (
-        <div key={workout.id} className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-white font-semibold text-sm">{workout.name}</p>
-              <p className="text-[#666] text-xs mt-0.5">
-                {DAY_NAMES[workout.dayOfWeek]} · {workout.estimatedMinutes} min
-              </p>
-            </div>
-            <span className="text-[#555] text-xs">{workout.focus}</span>
-          </div>
-
-          <div className="space-y-2">
-            {exercises.map(({ we, exercise }, i) => (
-              <div key={we.id} className="flex items-center gap-3 text-sm">
-                <span className="text-[#444] w-4 text-right text-xs">{i + 1}</span>
-                <span className="text-white flex-1">{exercise.name}</span>
-                <span className="text-[#22C55E] text-xs font-mono">
-                  {we.sets} × {we.reps}
-                </span>
-                <span className="text-[#444] text-xs">{we.restSeconds}s</span>
+      {data.workouts.map(({ workout, exercises }) => {
+        const completed = loggedWorkoutIds.has(workout.id);
+        return (
+          <Link
+            key={workout.id}
+            href={`/workouts/${workout.id}`}
+            className={`block bg-[#1A1A1A] border rounded-xl p-4 hover:border-[#444] transition-colors ${
+              completed ? "border-[#22C55E]/30 bg-[#22C55E]/5" : "border-[#2A2A2A]"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-white font-semibold text-sm">{workout.name}</p>
+                <p className="text-[#666] text-xs mt-0.5">
+                  {DAY_NAMES[workout.dayOfWeek]} · {workout.estimatedMinutes} min
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
-      ))}
+              <div className="flex items-center gap-2">
+                {workout.focus && <span className="text-[#555] text-xs">{workout.focus}</span>}
+                {completed ? (
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#22C55E]/15 text-[#22C55E] border border-[#22C55E]/30">
+                    ✓
+                  </span>
+                ) : (
+                  <span className="text-[#555] text-sm">›</span>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {exercises.map(({ we, exercise }, i) => (
+                <div key={we.id} className="flex items-center gap-3 text-sm">
+                  <span className="text-[#444] w-4 text-right text-xs">{i + 1}</span>
+                  <span className="text-white flex-1">{exercise.name}</span>
+                  <span className="text-[#22C55E] text-xs font-mono">
+                    {we.sets} × {we.reps}
+                  </span>
+                  {we.restSeconds ? <span className="text-[#444] text-xs">{we.restSeconds}s</span> : null}
+                </div>
+              ))}
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -100,10 +124,12 @@ function WeekRow({
   week,
   isSelected,
   onClick,
+  loggedWorkoutIds,
 }: {
   week: { id: string; weekNumber: number; phase: string; startDate: string; targetVolumeScore: number; targetIntensityScore: number; notes: string | null };
   isSelected: boolean;
   onClick: () => void;
+  loggedWorkoutIds: Set<string>;
 }) {
   const current = isCurrentWeek(week.startDate);
 
@@ -142,7 +168,7 @@ function WeekRow({
 
       {isSelected && (
         <div className="px-4 pb-4">
-          <WeekDetail weekId={week.id} />
+          <WeekDetail weekId={week.id} loggedWorkoutIds={loggedWorkoutIds} />
         </div>
       )}
     </div>
@@ -154,7 +180,12 @@ function WeekRow({
 export default function PlanPage() {
   const { data: me } = trpc.users.me.useQuery();
   const { data: planData, isLoading } = trpc.plans.getCurrent.useQuery();
+  const { data: history } = trpc.workouts.getHistory.useQuery({ limit: 100 });
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
+
+  const loggedWorkoutIds = new Set(
+    history?.filter((h) => h.log.completed).map((h) => h.workout.id) ?? []
+  );
 
   // Auto-expand the current week on load
   const currentWeekId = planData?.weeks.find((w) => isCurrentWeek(w.startDate))?.id;
@@ -230,6 +261,7 @@ export default function PlanPage() {
                   week={week}
                   isSelected={activeWeek === week.id}
                   onClick={() => toggleWeek(week.id)}
+                  loggedWorkoutIds={loggedWorkoutIds}
                 />
               ))}
             </div>

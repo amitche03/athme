@@ -41,7 +41,13 @@ function isCurrentWeek(startDate: string): boolean {
 
 // ─── Week detail ─────────────────────────────────────────────────────────────
 
-function WeekDetail({ weekId }: { weekId: string }) {
+function WeekDetail({
+  weekId,
+  loggedWorkoutIds,
+}: {
+  weekId: string;
+  loggedWorkoutIds: Set<string>;
+}) {
   const { data, isLoading } = trpc.plans.getWeek.useQuery({ weekId });
 
   if (isLoading) {
@@ -54,28 +60,42 @@ function WeekDetail({ weekId }: { weekId: string }) {
 
   return (
     <View style={styles.workoutList}>
-      {data.workouts.map(({ workout, exercises }) => (
-        <View key={workout.id} style={styles.workoutCard}>
-          <View style={styles.workoutHeader}>
-            <View>
-              <Text style={styles.workoutName}>{workout.name}</Text>
-              <Text style={styles.workoutMeta}>
-                {DAY_NAMES[workout.dayOfWeek]} · {workout.estimatedMinutes} min
-              </Text>
+      {data.workouts.map(({ workout, exercises }) => {
+        const completed = loggedWorkoutIds.has(workout.id);
+        return (
+          <Pressable
+            key={workout.id}
+            style={[styles.workoutCard, completed && styles.workoutCardCompleted]}
+            onPress={() => router.push(`/workouts/${workout.id}` as any)}
+          >
+            <View style={styles.workoutHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.workoutName}>{workout.name}</Text>
+                <Text style={styles.workoutMeta}>
+                  {DAY_NAMES[workout.dayOfWeek]} · {workout.estimatedMinutes} min
+                </Text>
+              </View>
+              {completed ? (
+                <View style={styles.completedBadge}>
+                  <Text style={styles.completedText}>✓</Text>
+                </View>
+              ) : (
+                <Text style={styles.chevronRight}>›</Text>
+              )}
             </View>
-          </View>
 
-          {exercises.map(({ we, exercise }, i) => (
-            <View key={we.id} style={styles.exerciseRow}>
-              <Text style={styles.exerciseNum}>{i + 1}</Text>
-              <Text style={styles.exerciseName} numberOfLines={1}>{exercise.name}</Text>
-              <Text style={styles.exerciseSets}>
-                {we.sets} × {we.reps}
-              </Text>
-            </View>
-          ))}
-        </View>
-      ))}
+            {exercises.map(({ we, exercise }, i) => (
+              <View key={we.id} style={styles.exerciseRow}>
+                <Text style={styles.exerciseNum}>{i + 1}</Text>
+                <Text style={styles.exerciseName} numberOfLines={1}>{exercise.name}</Text>
+                <Text style={styles.exerciseSets}>
+                  {we.sets} × {we.reps}
+                </Text>
+              </View>
+            ))}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -86,6 +106,7 @@ function WeekRow({
   week,
   isExpanded,
   onToggle,
+  loggedWorkoutIds,
 }: {
   week: {
     id: string;
@@ -98,6 +119,7 @@ function WeekRow({
   };
   isExpanded: boolean;
   onToggle: () => void;
+  loggedWorkoutIds: Set<string>;
 }) {
   const current = isCurrentWeek(week.startDate);
   const phaseColor = PHASE_COLORS[week.phase] ?? "#6B7280";
@@ -128,7 +150,7 @@ function WeekRow({
         <Text style={styles.chevron}>{isExpanded ? "▲" : "▼"}</Text>
       </Pressable>
 
-      {isExpanded && <WeekDetail weekId={week.id} />}
+      {isExpanded && <WeekDetail weekId={week.id} loggedWorkoutIds={loggedWorkoutIds} />}
     </View>
   );
 }
@@ -137,7 +159,13 @@ function WeekRow({
 
 export default function PlanScreen() {
   const { data: planData, isLoading } = trpc.plans.getCurrent.useQuery();
+  const { data: history } = trpc.workouts.getHistory.useQuery({ limit: 100 });
   const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
+
+  // Build set of completed workout IDs
+  const loggedWorkoutIds = new Set(
+    history?.filter((h) => h.log.completed).map((h) => h.workout.id) ?? []
+  );
 
   // Auto-open the current week
   const currentWeekId = planData?.weeks.find((w) => isCurrentWeek(w.startDate))?.id;
@@ -187,6 +215,7 @@ export default function PlanScreen() {
               week={week}
               isExpanded={activeWeek === week.id}
               onToggle={() => toggle(week.id)}
+              loggedWorkoutIds={loggedWorkoutIds}
             />
           ))}
           <View style={{ height: 40 }} />
@@ -261,9 +290,30 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
   },
-  workoutHeader: { marginBottom: 10 },
+  workoutCardCompleted: {
+    borderColor: "rgba(34,197,94,0.3)",
+    backgroundColor: "rgba(34,197,94,0.04)",
+  },
+  workoutHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
   workoutName: { color: "#FFF", fontWeight: "600", fontSize: 13 },
   workoutMeta: { color: "#666", fontSize: 11, marginTop: 2 },
+  completedBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(34,197,94,0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  completedText: { color: "#22C55E", fontSize: 12, fontWeight: "700" },
+  chevronRight: { color: "#444", fontSize: 18 },
+
   exerciseRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -171,6 +171,43 @@ function StatCard({
   );
 }
 
+// ─── Profile banner ───────────────────────────────────────────────────────────
+
+function ProfileBanner() {
+  return (
+    <Pressable
+      style={bannerStyles.wrap}
+      onPress={() => router.push("/profile/edit" as any)}
+    >
+      <Text style={bannerStyles.icon}>⚡</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={bannerStyles.title}>Complete your profile</Text>
+        <Text style={bannerStyles.sub}>
+          Get a plan tailored to your fitness level
+        </Text>
+      </View>
+      <Text style={bannerStyles.cta}>Set up →</Text>
+    </Pressable>
+  );
+}
+
+const bannerStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(34,197,94,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.25)",
+    borderRadius: 14,
+    padding: 12,
+  },
+  icon: { fontSize: 18 },
+  title: { color: "#22C55E", fontSize: 13, fontWeight: "700" },
+  sub: { color: "#888", fontSize: 11, marginTop: 1 },
+  cta: { color: "#22C55E", fontSize: 13, fontWeight: "700" },
+});
+
 // ─── Home screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -179,6 +216,7 @@ export default function HomeScreen() {
 
   const email = me?.email ?? user?.email ?? "";
   const displayName = email ? getDisplayName(email) : "";
+  const showProfileBanner = !isLoading && !me?.fitnessLevel;
 
   return (
     <View style={styles.container}>
@@ -206,6 +244,9 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Profile completion banner */}
+        {showProfileBanner && <ProfileBanner />}
+
         {/* Today */}
         <TodayCard />
 

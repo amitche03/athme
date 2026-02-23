@@ -20,6 +20,7 @@ import {
   sports,
   trainingPlans,
   trainingWeeks,
+  users,
   workoutExercises,
   workouts,
 } from "../db/schema";
@@ -98,6 +99,14 @@ export async function generatePlan({ userId, goalId }: GeneratePlanInput): Promi
   if (!goalRow) throw new Error("Goal not found");
 
   const { goal, sport } = goalRow;
+
+  // Load user profile to personalise volume
+  const [userRow] = await db
+    .select({ fitnessLevel: users.fitnessLevel, trainingDaysPerWeek: users.trainingDaysPerWeek })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
   const today = new Date().toISOString().split("T")[0];
   const startDate = getMondayOf(today);
 
@@ -144,8 +153,20 @@ export async function generatePlan({ userId, goalId }: GeneratePlanInput): Promi
       })
       .returning({ id: trainingWeeks.id });
 
+    // Determine workouts per week: user's explicit setting > fitness level default > plan spec
+    const profileDays = userRow?.trainingDaysPerWeek ?? null;
+    const levelDays = userRow?.fitnessLevel === "beginner" ? 3
+      : userRow?.fitnessLevel === "intermediate" ? 4
+      : userRow?.fitnessLevel === "advanced" ? 6
+      : null;
+    const effectiveWorkoutsPerWeek = profileDays !== null
+      ? Math.min(spec.workoutsPerWeek, profileDays)
+      : levelDays !== null
+      ? Math.min(spec.workoutsPerWeek, levelDays)
+      : spec.workoutsPerWeek;
+
     // Get workout templates for this sport + workouts-per-week
-    const slots = getWorkoutSlots(sport.slug, spec.workoutsPerWeek);
+    const slots = getWorkoutSlots(sport.slug, effectiveWorkoutsPerWeek);
 
     for (const slot of slots) {
       const [workout] = await db

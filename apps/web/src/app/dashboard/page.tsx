@@ -256,6 +256,24 @@ function QuickActions() {
   );
 }
 
+// ─── Profile banner ───────────────────────────────────────────────────────────
+
+function ProfileBanner() {
+  return (
+    <Link
+      href="/profile/edit"
+      className="flex items-center gap-3 bg-[#22C55E]/8 border border-[#22C55E]/25 rounded-xl px-5 py-3.5 hover:bg-[#22C55E]/12 transition-colors mb-6"
+    >
+      <span className="text-lg">⚡</span>
+      <div className="flex-1">
+        <p className="text-[#22C55E] text-sm font-bold">Complete your profile</p>
+        <p className="text-[#888] text-xs mt-0.5">Get a plan tailored to your fitness level</p>
+      </div>
+      <span className="text-[#22C55E] text-sm font-bold">Set up →</span>
+    </Link>
+  );
+}
+
 // ─── Dashboard Page ───────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -263,6 +281,7 @@ export default function DashboardPage() {
 
   const email = user?.email ?? "";
   const displayName = email ? getDisplayName(email) : "";
+  const showProfileBanner = !isLoading && !user?.fitnessLevel;
 
   return (
     <div className="min-h-screen bg-[#0D0D0D]">
@@ -280,6 +299,9 @@ export default function DashboardPage() {
           )}
           <p className="text-[#666] text-sm mt-1">{formatDate()}</p>
         </div>
+
+        {/* Profile completion banner */}
+        {showProfileBanner && <ProfileBanner />}
 
         {/* Today's workout — hero */}
         <div className="mb-6">

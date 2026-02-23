@@ -7,8 +7,10 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load the existing session on mount
+    // Load the existing session on mount — timeout after 5s so we never hang on white screen
+    const timeout = setTimeout(() => setLoading(false), 5000);
     supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(timeout);
       setSession(session);
       setLoading(false);
     });
