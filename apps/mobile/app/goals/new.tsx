@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { trpc } from "@/lib/trpc";
+import { DatePickerField } from "@/components/DatePickerField";
 
 type Sport = {
   id: string;
@@ -117,7 +118,7 @@ export default function NewGoalScreen() {
   const [step, setStep] = useState(1);
   const [selectedSport, setSelectedSport] = useState<Sport | null>(null);
   const [name, setName] = useState("");
-  const [targetDate, setTargetDate] = useState("");
+  const [targetDate, setTargetDate] = useState<string | null>(null);
   const [description, setDescription] = useState("");
 
   const { data: sports = [], isLoading: sportsLoading } =
@@ -144,11 +145,6 @@ export default function NewGoalScreen() {
   function handleSubmit() {
     if (!selectedSport || !name || !targetDate) {
       Alert.alert("Missing info", "Please fill in all required fields.");
-      return;
-    }
-    // Validate date format YYYY-MM-DD
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-      Alert.alert("Invalid date", "Enter date as YYYY-MM-DD (e.g. 2026-12-01)");
       return;
     }
     createGoal.mutate({
@@ -222,14 +218,11 @@ export default function NewGoalScreen() {
 
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Target Date</Text>
-              <Text style={styles.hint}>Format: YYYY-MM-DD (e.g. 2026-12-01)</Text>
-              <TextInput
-                style={styles.input}
+              <DatePickerField
                 value={targetDate}
-                onChangeText={setTargetDate}
-                placeholder="2026-12-01"
-                placeholderTextColor="#555"
-                keyboardType="numeric"
+                onChange={setTargetDate}
+                minimumDate={new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)}
+                placeholder="When do you want to peak?"
               />
             </View>
 
@@ -363,7 +356,6 @@ const styles = StyleSheet.create({
 
   fieldGroup: { marginBottom: 20 },
   label: { color: "#AAAAAA", fontSize: 11, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 },
-  hint: { color: "#555", fontSize: 11, marginBottom: 6, marginTop: -2 },
   optional: { color: "#555", fontSize: 11, fontWeight: "400", textTransform: "none" },
   input: {
     backgroundColor: "#1A1A1A",

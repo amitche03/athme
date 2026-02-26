@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
+import type { AppRouter, inferRouterOutputs } from "@athme/api";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -33,27 +34,123 @@ function getDisplayName(email: string) {
 
 // ─── Today card ───────────────────────────────────────────────────────────────
 
-function TodayCard() {
+type RouterOutput = inferRouterOutputs<AppRouter>;
+type TodayData = NonNullable<RouterOutput["plans"]["getToday"]>;
+
+function TodayCard({
+  todayData,
+  loading,
+  hasGoal,
+}: {
+  todayData: TodayData | null | undefined;
+  loading: boolean;
+  hasGoal: boolean;
+}) {
+  if (loading) {
+    return (
+      <View style={styles.card}>
+        <View style={styles.skeletonLine} />
+        <View style={[styles.skeletonLine, { width: "60%", marginTop: 8 }]} />
+        <View style={[styles.skeletonLine, { width: "80%", marginTop: 8 }]} />
+      </View>
+    );
+  }
+
+  if (!hasGoal) {
+    return (
+      <View style={styles.card}>
+        <View style={styles.todayRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardEyebrow}>Today's Focus</Text>
+            <Text style={styles.todayTitle}>No workout yet</Text>
+            <Text style={styles.todaySubtitle}>
+              Set a goal to generate your first training plan
+            </Text>
+          </View>
+          <View style={styles.iconBox}>
+            <Text style={{ fontSize: 24 }}>🏋️</Text>
+          </View>
+        </View>
+        <View style={styles.ctaRow}>
+          <Pressable
+            style={styles.primaryBtn}
+            onPress={() => router.push("/goals/new")}
+          >
+            <Text style={styles.primaryBtnText}>Set Your First Goal</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  if (!todayData) {
+    // Has a plan but no workout today → rest day
+    return (
+      <View style={styles.card}>
+        <View style={styles.todayRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardEyebrow}>Today's Focus</Text>
+            <Text style={styles.todayTitle}>Rest Day</Text>
+            <Text style={styles.todaySubtitle}>
+              Recovery is part of the plan
+            </Text>
+          </View>
+          <View style={styles.iconBox}>
+            <Text style={{ fontSize: 24 }}>😴</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const { workout, exercises, log } = todayData;
+  const isCompleted = log?.completed ?? false;
+  const topExercises = exercises.slice(0, 3);
+
   return (
     <View style={styles.card}>
       <View style={styles.todayRow}>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardEyebrow}>Today's Focus</Text>
-          <Text style={styles.todayTitle}>No workout yet</Text>
-          <Text style={styles.todaySubtitle}>
-            Set a goal to generate your first training plan
+          <Text style={styles.todayTitle}>
+            {workout.name}
+            {isCompleted ? " ✓" : ""}
           </Text>
+          {workout.focus ? (
+            <Text style={styles.todaySubtitle}>{workout.focus}</Text>
+          ) : null}
+          {workout.estimatedMinutes ? (
+            <Text style={styles.todayMeta}>~{workout.estimatedMinutes} min</Text>
+          ) : null}
         </View>
         <View style={styles.iconBox}>
-          <Text style={{ fontSize: 24 }}>🏋️</Text>
+          <Text style={{ fontSize: 24 }}>{isCompleted ? "✅" : "🏋️"}</Text>
         </View>
       </View>
+
+      {topExercises.length > 0 && (
+        <View style={styles.exerciseList}>
+          {topExercises.map(({ we, exercise }) => (
+            <Text key={we.id} style={styles.exerciseItem}>
+              • {exercise.name} — {we.sets}×{we.reps}
+            </Text>
+          ))}
+          {exercises.length > 3 && (
+            <Text style={styles.exerciseMore}>
+              +{exercises.length - 3} more
+            </Text>
+          )}
+        </View>
+      )}
+
       <View style={styles.ctaRow}>
         <Pressable
-          style={styles.primaryBtn}
-          onPress={() => router.push("/goals/new")}
+          style={isCompleted ? styles.secondaryBtn : styles.primaryBtn}
+          onPress={() => router.push(`/workouts/${workout.id}` as any)}
         >
-          <Text style={styles.primaryBtnText}>Set Your First Goal</Text>
+          <Text style={isCompleted ? styles.secondaryBtnText : styles.primaryBtnText}>
+            {isCompleted ? "View Log" : "Start Workout"}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -213,10 +310,16 @@ const bannerStyles = StyleSheet.create({
 export default function HomeScreen() {
   const { user } = useAuth();
   const { data: me, isLoading } = trpc.users.me.useQuery();
+  const { data: activeGoal } = trpc.goals.getActive.useQuery();
+  const { data: todayData, isLoading: todayLoading } = trpc.plans.getToday.useQuery();
+  const { data: stats } = trpc.workouts.getStats.useQuery();
 
   const email = me?.email ?? user?.email ?? "";
   const displayName = email ? getDisplayName(email) : "";
   const showProfileBanner = !isLoading && !me?.fitnessLevel;
+  const hasGoal = !!activeGoal;
+
+  const streakLabel = stats?.streak === 1 ? "day" : "days";
 
   return (
     <View style={styles.container}>
@@ -248,7 +351,11 @@ export default function HomeScreen() {
         {showProfileBanner && <ProfileBanner />}
 
         {/* Today */}
-        <TodayCard />
+        <TodayCard
+          todayData={todayData}
+          loading={todayLoading}
+          hasGoal={hasGoal}
+        />
 
         {/* Goal + Week */}
         <View style={styles.halfRow}>
@@ -257,14 +364,20 @@ export default function HomeScreen() {
         </View>
 
         {/* Stats */}
-        <StatCard value={0} label="Workouts this week" icon="📅" />
+        <StatCard
+          value={stats?.thisWeekCompleted ?? 0}
+          label="Workouts this week"
+          icon="📅"
+        />
         <View style={styles.halfRow}>
           <View style={[styles.card, styles.halfCard, styles.statCard]}>
             <View style={styles.iconBox}>
               <Text style={{ fontSize: 18 }}>🔥</Text>
             </View>
             <View style={{ marginLeft: 12 }}>
-              <Text style={styles.statValue}>0 days</Text>
+              <Text style={styles.statValue}>
+                {stats?.streak ?? 0} {streakLabel}
+              </Text>
               <Text style={styles.statLabel}>Streak</Text>
             </View>
           </View>
@@ -273,7 +386,7 @@ export default function HomeScreen() {
               <Text style={{ fontSize: 18 }}>✅</Text>
             </View>
             <View style={{ marginLeft: 12 }}>
-              <Text style={styles.statValue}>0</Text>
+              <Text style={styles.statValue}>{stats?.totalCompleted ?? 0}</Text>
               <Text style={styles.statLabel}>Total workouts</Text>
             </View>
           </View>
@@ -306,6 +419,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#1A1A1A",
     borderRadius: 6,
     marginBottom: 4,
+  },
+  skeletonLine: {
+    height: 16,
+    backgroundColor: "#1A1A1A",
+    borderRadius: 6,
+    width: "90%",
   },
   avatar: {
     width: 36,
@@ -344,6 +463,10 @@ const styles = StyleSheet.create({
   todayRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 14 },
   todayTitle: { color: "#FFF", fontSize: 18, fontWeight: "700", marginBottom: 4 },
   todaySubtitle: { color: "#666", fontSize: 12, lineHeight: 17 },
+  todayMeta: { color: "#666", fontSize: 11, marginTop: 4 },
+  exerciseList: { marginBottom: 14, gap: 4 },
+  exerciseItem: { color: "#AAA", fontSize: 12 },
+  exerciseMore: { color: "#555", fontSize: 11, marginTop: 2 },
   ctaRow: { flexDirection: "row" },
   primaryBtn: {
     backgroundColor: "#22C55E",
@@ -352,6 +475,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   primaryBtnText: { color: "#000", fontWeight: "700", fontSize: 13 },
+  secondaryBtn: {
+    backgroundColor: "#1A1A1A",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  secondaryBtnText: { color: "#888", fontWeight: "600", fontSize: 13 },
 
   // Goal card
   goalContent: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 12 },

@@ -79,6 +79,8 @@ export const trainingWeeks = pgTable("training_weeks", {
   notes: text("notes"), // e.g. "Deload week — reduce all sets by 40%"
 });
 
+export const workoutStatusEnum = pgEnum("workout_status", ["scheduled", "skipped"]);
+
 // A single workout session within a week
 export const workouts = pgTable("workouts", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -90,6 +92,18 @@ export const workouts = pgTable("workouts", {
   orderInDay: integer("order_in_day").default(1).notNull(), // for multiple sessions/day
   estimatedMinutes: integer("estimated_minutes"),
   focus: text("focus"), // short descriptor e.g. "Ski legs + core stability"
+  status: workoutStatusEnum("status").default("scheduled").notNull(),
+});
+
+export const checkInRatingEnum = pgEnum("check_in_rating", ["too_easy", "on_track", "too_hard"]);
+
+export const weeklyCheckIns = pgTable("weekly_check_ins", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  weekId: uuid("week_id").notNull().references(() => trainingWeeks.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  rating: checkInRatingEnum("rating").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // The exercises prescribed within a workout, in order

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
+import { DatePickerField } from "@/components/DatePickerField";
 
 // ─── Chip selector ────────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ export default function EditProfileScreen() {
   const [feet, setFeet] = useState("");
   const [inches, setInches] = useState("");
   const [weightLbs, setWeightLbs] = useState("");
-  const [dob, setDob] = useState("");
+  const [dob, setDob] = useState<string | null>(null);
   const [gender, setGender] = useState<typeof GENDER_OPTIONS[number]["value"] | null>(null);
   const [fitnessLevel, setFitnessLevel] = useState<typeof FITNESS_OPTIONS[number]["value"] | null>(null);
   const [trainingDays, setTrainingDays] = useState<string | null>(null);
@@ -114,11 +115,15 @@ export default function EditProfileScreen() {
     if (me && !seeded) {
       setDisplayName(me.displayName ?? "");
       if (me.heightCm) {
-        setFeet(String(Math.floor(me.heightCm / 30.48)));
-        setInches(String(Math.round((me.heightCm / 2.54) % 12)));
+        const totalInches = me.heightCm / 2.54;
+        let ft = Math.floor(totalInches / 12);
+        let ins = Math.round(totalInches % 12);
+        if (ins === 12) { ft += 1; ins = 0; }
+        setFeet(String(ft));
+        setInches(String(ins));
       }
       if (me.weightKg) setWeightLbs(String(Math.round(parseFloat(me.weightKg) * 2.20462)));
-      if (me.dateOfBirth) setDob(me.dateOfBirth);
+      if (me.dateOfBirth) setDob(me.dateOfBirth ?? null);
       if (me.gender) setGender(me.gender as any);
       if (me.fitnessLevel) setFitnessLevel(me.fitnessLevel as any);
       if (me.trainingDaysPerWeek) setTrainingDays(String(me.trainingDaysPerWeek));
@@ -226,14 +231,13 @@ export default function EditProfileScreen() {
             />
           </Field>
 
-          <Field label="Date of birth (YYYY-MM-DD)">
-            <TextInput
-              style={styles.input}
+          <Field label="Date of Birth">
+            <DatePickerField
               value={dob}
-              onChangeText={setDob}
-              placeholder="e.g. 1990-06-15"
-              placeholderTextColor="#444"
-              keyboardType="numbers-and-punctuation"
+              onChange={setDob}
+              maximumDate={new Date()}
+              minimumDate={new Date("1900-01-01")}
+              placeholder="Select your date of birth"
             />
           </Field>
 

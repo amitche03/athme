@@ -8,5 +8,5 @@ export default defineConfig({
     url: process.env.DIRECT_URL!,
   },
   verbose: true,
-  strict: true,
+  strict: false,
 });
