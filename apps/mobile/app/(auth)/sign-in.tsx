@@ -17,6 +17,26 @@ export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  async function handleForgotPassword() {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      Alert.alert("Enter your email", "Type your email address above, then tap Forgot password.");
+      return;
+    }
+    setResetLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmed);
+    setResetLoading(false);
+    if (error) {
+      Alert.alert("Error", error.message);
+    } else {
+      Alert.alert(
+        "Check your email",
+        `We sent a password reset link to ${trimmed}.`
+      );
+    }
+  }
 
   async function handleSignIn() {
     if (!email || !password) {
@@ -77,6 +97,17 @@ export default function SignInScreen() {
               secureTextEntry
               autoComplete="password"
             />
+            <Pressable
+              onPress={handleForgotPassword}
+              disabled={resetLoading}
+              style={styles.forgotBtn}
+            >
+              {resetLoading ? (
+                <ActivityIndicator color="#22C55E" size="small" />
+              ) : (
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              )}
+            </Pressable>
           </View>
 
           <Pressable
@@ -180,6 +211,15 @@ const styles = StyleSheet.create({
   footerLink: {
     color: "#22C55E",
     fontSize: 14,
+    fontWeight: "600",
+  },
+  forgotBtn: {
+    alignSelf: "flex-end",
+    marginTop: 8,
+  },
+  forgotText: {
+    color: "#22C55E",
+    fontSize: 13,
     fontWeight: "600",
   },
 });

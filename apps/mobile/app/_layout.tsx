@@ -1,5 +1,5 @@
-import { Stack, useRouter, useSegments } from "expo-router";
-import { useEffect } from "react";
+import { Stack, useNavigationContainerRef, useRouter, useSegments } from "expo-router";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useAuth } from "@/hooks/useAuth";
 import { TRPCProvider, trpc } from "@/lib/trpc";
@@ -22,6 +22,19 @@ function RootLayoutNav() {
   const { session, loading: authLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const navRef = useNavigationContainerRef();
+  const [navReady, setNavReady] = useState(false);
+
+  useEffect(() => {
+    if (navRef.current) {
+      const unsubscribe = navRef.addListener("state", () => {
+        if (!navReady) setNavReady(true);
+      });
+      // Also check if already ready
+      if (navRef.isReady()) setNavReady(true);
+      return unsubscribe;
+    }
+  }, [navRef]);
 
   // Fetch profile as soon as we have a session.
   // users.me auto-creates the profile row on first sign-in.
@@ -30,7 +43,7 @@ function RootLayoutNav() {
   });
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || !navReady) return;
 
     const inAuthGroup  = segments[0] === "(auth)";
     const inOnboarding = segments[0] === "onboarding";
@@ -52,7 +65,7 @@ function RootLayoutNav() {
     } else if (!needsOnboarding && (inAuthGroup || inOnboarding)) {
       router.replace("/(tabs)");
     }
-  }, [session, authLoading, segments, me, meLoading]);
+  }, [session, authLoading, segments, me, meLoading, navReady]);
 
   // Show a blank splash while auth loads, or while we determine onboarding status
   if (authLoading || (session && meLoading)) {

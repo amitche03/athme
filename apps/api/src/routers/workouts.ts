@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -220,14 +220,18 @@ export const workoutsRouter = router({
         ),
       );
 
-    return { totalCompleted: total, streak, thisWeekCompleted };
+    // This month
+    const monthStart = today.slice(0, 8) + "01"; // YYYY-MM-01
+    const thisMonthCompleted = completedDates.filter(({ date }) => date >= monthStart).length;
+
+    return { totalCompleted: total, streak, thisWeekCompleted, thisMonthCompleted };
   }),
 
-  // Recent workout history
+  // Recent workout history with exercise summaries + PR flags
   getHistory: protectedProcedure
     .input(z.object({ limit: z.number().int().default(20) }))
     .query(async ({ ctx, input }) => {
-      return ctx.db
+      const history = await ctx.db
         .select({
           log: workoutLogs,
           workout: workouts,
@@ -237,7 +241,205 @@ export const workoutsRouter = router({
         .where(eq(workoutLogs.userId, ctx.user.id))
         .orderBy(desc(workoutLogs.createdAt))
         .limit(input.limit);
+
+      if (history.length === 0) return [];
+
+      const logIds = history.map((h) => h.log.id);
+
+      // Batch-fetch exercise logs for all returned workout logs
+      const allExLogs = await ctx.db
+        .select({
+          workoutLogId: exerciseLogs.workoutLogId,
+          exerciseId: exerciseLogs.exerciseId,
+          exerciseName: exercises.name,
+          weightKg: exerciseLogs.weightKg,
+          repsCompleted: exerciseLogs.repsCompleted,
+          setNumber: exerciseLogs.setNumber,
+        })
+        .from(exerciseLogs)
+        .innerJoin(exercises, eq(exerciseLogs.exerciseId, exercises.id))
+        .where(
+          sql`${exerciseLogs.workoutLogId} in (${sql.join(
+            logIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        )
+        .orderBy(asc(exerciseLogs.setNumber));
+
+      // Get all-time max weight per exercise for PR detection
+      const uniqueExerciseIds = [
+        ...new Set(allExLogs.map((e) => e.exerciseId)),
+      ];
+      const prMap = new Map<string, string>(); // exerciseId -> max weightKg
+
+      if (uniqueExerciseIds.length > 0) {
+        const maxWeights = await ctx.db
+          .select({
+            exerciseId: exerciseLogs.exerciseId,
+            maxWeight: sql<string>`max(${exerciseLogs.weightKg})`,
+          })
+          .from(exerciseLogs)
+          .innerJoin(
+            workoutLogs,
+            eq(exerciseLogs.workoutLogId, workoutLogs.id),
+          )
+          .where(
+            and(
+              eq(workoutLogs.userId, ctx.user.id),
+              sql`${exerciseLogs.exerciseId} in (${sql.join(
+                uniqueExerciseIds.map((id) => sql`${id}`),
+                sql`, `,
+              )})`,
+              sql`${exerciseLogs.weightKg} is not null`,
+            ),
+          )
+          .groupBy(exerciseLogs.exerciseId);
+
+        for (const row of maxWeights) {
+          if (row.maxWeight) prMap.set(row.exerciseId, row.maxWeight);
+        }
+      }
+
+      // Group exercise logs by workoutLogId, dedupe by exercise (pick best set)
+      const exByLog = new Map<
+        string,
+        {
+          name: string;
+          weightKg: string | null;
+          reps: number | null;
+          setCount: number;
+          isPR: boolean;
+        }[]
+      >();
+
+      for (const e of allExLogs) {
+        if (!exByLog.has(e.workoutLogId)) exByLog.set(e.workoutLogId, []);
+        const arr = exByLog.get(e.workoutLogId)!;
+        const existing = arr.find((x) => x.name === e.exerciseName);
+        if (existing) {
+          existing.setCount++;
+          // Keep highest weight
+          if (
+            e.weightKg &&
+            (!existing.weightKg ||
+              parseFloat(e.weightKg) > parseFloat(existing.weightKg))
+          ) {
+            existing.weightKg = e.weightKg;
+            existing.reps = e.repsCompleted;
+            existing.isPR =
+              prMap.get(e.exerciseId) === e.weightKg;
+          }
+        } else {
+          arr.push({
+            name: e.exerciseName,
+            weightKg: e.weightKg,
+            reps: e.repsCompleted,
+            setCount: 1,
+            isPR: e.weightKg
+              ? prMap.get(e.exerciseId) === e.weightKg
+              : false,
+          });
+        }
+      }
+
+      return history.map((h) => {
+        const exercises = (exByLog.get(h.log.id) ?? []).slice(0, 3);
+        return {
+          ...h,
+          exercises,
+          hasPR: exercises.some((e) => e.isPR),
+        };
+      });
     }),
+
+  // Activity heatmap: dates + effort for last 12 weeks
+  getHeatmap: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 83); // 84 days = 12 weeks
+    const startDate = start.toISOString().split("T")[0];
+
+    return ctx.db
+      .select({
+        date: workoutLogs.date,
+        perceivedEffort: workoutLogs.perceivedEffort,
+        completed: workoutLogs.completed,
+      })
+      .from(workoutLogs)
+      .where(
+        and(
+          eq(workoutLogs.userId, ctx.user.id),
+          gte(workoutLogs.date, startDate),
+        ),
+      )
+      .orderBy(asc(workoutLogs.date));
+  }),
+
+  // Personal records: best weight per exercise
+  getPersonalRecords: protectedProcedure.query(async ({ ctx }) => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const recentCutoff = sevenDaysAgo.toISOString().split("T")[0];
+
+    // Get max weight per exercise with the log date
+    const records = await ctx.db
+      .select({
+        exerciseId: exerciseLogs.exerciseId,
+        exerciseName: exercises.name,
+        bestWeightKg: sql<string>`max(${exerciseLogs.weightKg})`,
+      })
+      .from(exerciseLogs)
+      .innerJoin(
+        workoutLogs,
+        eq(exerciseLogs.workoutLogId, workoutLogs.id),
+      )
+      .innerJoin(exercises, eq(exerciseLogs.exerciseId, exercises.id))
+      .where(
+        and(
+          eq(workoutLogs.userId, ctx.user.id),
+          sql`${exerciseLogs.weightKg} is not null`,
+        ),
+      )
+      .groupBy(exerciseLogs.exerciseId, exercises.name)
+      .orderBy(desc(sql`max(${workoutLogs.date})`))
+      .limit(10);
+
+    // For each record, find the actual set that achieved it (date + reps)
+    const enriched = await Promise.all(
+      records.map(async (r) => {
+        const [bestSet] = await ctx.db
+          .select({
+            repsCompleted: exerciseLogs.repsCompleted,
+            date: workoutLogs.date,
+          })
+          .from(exerciseLogs)
+          .innerJoin(
+            workoutLogs,
+            eq(exerciseLogs.workoutLogId, workoutLogs.id),
+          )
+          .where(
+            and(
+              eq(workoutLogs.userId, ctx.user.id),
+              eq(exerciseLogs.exerciseId, r.exerciseId),
+              eq(exerciseLogs.weightKg, r.bestWeightKg),
+            ),
+          )
+          .orderBy(desc(workoutLogs.date))
+          .limit(1);
+
+        return {
+          exerciseId: r.exerciseId,
+          exerciseName: r.exerciseName,
+          bestWeightKg: r.bestWeightKg,
+          repsAtBest: bestSet?.repsCompleted ?? null,
+          date: bestSet?.date ?? null,
+          isRecent: bestSet ? bestSet.date >= recentCutoff : false,
+        };
+      }),
+    );
+
+    return enriched;
+  }),
 
   // Toggle skip/scheduled status for a workout
   skipWorkout: protectedProcedure

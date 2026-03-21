@@ -28,8 +28,14 @@ function formatDate() {
   });
 }
 
-function getDisplayName(email: string) {
-  return email.split("@")[0];
+function getFirstName(me: { displayName: string | null } | null | undefined, email: string) {
+  if (me?.displayName) return me.displayName.split(" ")[0];
+  // Fallback: try to extract a first name from the email prefix
+  const prefix = email.split("@")[0];
+  const cleaned = prefix.replace(/[0-9_.-]+$/g, ""); // strip trailing numbers/symbols
+  const parts = cleaned.split(/[._-]/);
+  if (parts[0]) return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+  return "";
 }
 
 // ─── Today card ───────────────────────────────────────────────────────────────
@@ -315,7 +321,7 @@ export default function HomeScreen() {
   const { data: stats } = trpc.workouts.getStats.useQuery();
 
   const email = me?.email ?? user?.email ?? "";
-  const displayName = email ? getDisplayName(email) : "";
+  const firstName = getFirstName(me, email);
   const showProfileBanner = !isLoading && !me?.fitnessLevel;
   const hasGoal = !!activeGoal;
 
@@ -330,15 +336,10 @@ export default function HomeScreen() {
             <View style={styles.skeletonName} />
           ) : (
             <Text style={styles.greeting}>
-              {getGreeting()}{displayName ? `, ${displayName}` : ""} 👋
+              {getGreeting()}{firstName ? `, ${firstName}` : ""}
             </Text>
           )}
           <Text style={styles.date}>{formatDate()}</Text>
-        </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {displayName ? displayName[0].toUpperCase() : "A"}
-          </Text>
         </View>
       </View>
 
@@ -426,17 +427,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     width: "90%",
   },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(34,197,94,0.2)",
-    borderWidth: 1,
-    borderColor: "#22C55E",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: "#22C55E", fontWeight: "700", fontSize: 14 },
 
   scrollContent: { padding: 16, paddingBottom: 32, gap: 12 },
 

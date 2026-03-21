@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,7 +12,103 @@ import {
   View,
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import * as Haptics from "expo-haptics";
 import { trpc } from "@/lib/trpc";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}:${s.toString().padStart(2, "0")}` : `${s}s`;
+}
+
+// ─── Rest Timer Banner ────────────────────────────────────────────────────────
+
+function RestTimerBanner({
+  seconds,
+  total,
+  onSkip,
+}: {
+  seconds: number;
+  total: number;
+  onSkip: () => void;
+}) {
+  const progress = total > 0 ? seconds / total : 0;
+  const isAlmostDone = seconds <= 5 && seconds > 0;
+
+  return (
+    <View style={timerStyles.banner}>
+      <View style={timerStyles.progressTrack}>
+        <View
+          style={[
+            timerStyles.progressFill,
+            { width: `${progress * 100}%` },
+            isAlmostDone && timerStyles.progressFillAlmostDone,
+          ]}
+        />
+      </View>
+      <View style={timerStyles.row}>
+        <View>
+          <Text style={timerStyles.label}>Rest</Text>
+          <Text style={timerStyles.sublabel}>Next set coming up</Text>
+        </View>
+        <Text
+          style={[timerStyles.countdown, isAlmostDone && timerStyles.countdownAlmostDone]}
+        >
+          {formatTime(seconds)}
+        </Text>
+        <Pressable onPress={onSkip} hitSlop={16} style={timerStyles.skipBtn}>
+          <Text style={timerStyles.skip}>Skip →</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const timerStyles = StyleSheet.create({
+  banner: {
+    backgroundColor: "#111",
+    borderTopWidth: 1,
+    borderTopColor: "#22C55E",
+  },
+  progressTrack: {
+    height: 3,
+    backgroundColor: "#1E1E1E",
+  },
+  progressFill: {
+    height: 3,
+    backgroundColor: "#22C55E",
+  },
+  progressFillAlmostDone: {
+    backgroundColor: "#F97316",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  label: { color: "#FFF", fontSize: 13, fontWeight: "700" },
+  sublabel: { color: "#555", fontSize: 11, marginTop: 1 },
+  countdown: {
+    color: "#22C55E",
+    fontSize: 32,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
+  countdownAlmostDone: { color: "#F97316" },
+  skipBtn: {
+    backgroundColor: "#1A1A1A",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  skip: { color: "#888", fontSize: 13, fontWeight: "600" },
+});
 
 // ─── Set row ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +178,55 @@ export default function WorkoutLogScreen() {
   const [duration, setDuration] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Rest timer state
+  const [timerActive, setTimerActive] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerTotal, setTimerTotal] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Build lookup: weId → restSeconds
+  const restSecondsMap = useMemo(() => {
+    if (!workoutData) return {} as Record<string, number>;
+    return Object.fromEntries(
+      workoutData.exercises.map(({ we }) => [we.id, we.restSeconds ?? 60])
+    );
+  }, [workoutData]);
+
+  // Countdown tick
+  useEffect(() => {
+    if (!timerActive) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+    intervalRef.current = setInterval(() => {
+      setTimerSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [timerActive]);
+
+  // Timer completion
+  useEffect(() => {
+    if (timerActive && timerSeconds === 0) {
+      setTimerActive(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [timerSeconds, timerActive]);
+
+  function startTimer(seconds: number) {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setTimerTotal(seconds);
+    setTimerSeconds(seconds);
+    setTimerActive(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
+
+  function skipTimer() {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setTimerActive(false);
+  }
+
   // Mutations
   const logWorkout = trpc.workouts.logWorkout.useMutation();
   const logSet = trpc.workouts.logSet.useMutation();
@@ -112,6 +257,10 @@ export default function WorkoutLogScreen() {
         weightKg: weight || undefined,
       });
       setLoggedSets((prev) => new Set(prev).add(`${weId}-${setNumber}`));
+
+      // Start rest timer using this exercise's prescribed rest, or 60s default
+      const rest = restSecondsMap[weId] ?? 60;
+      startTimer(rest);
     } catch (e) {
       console.error("Failed to log set", e);
     }
@@ -126,11 +275,10 @@ export default function WorkoutLogScreen() {
         perceivedEffort: rpe ? parseInt(rpe, 10) : undefined,
         notes: notes || undefined,
       });
-      // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: [["workouts", "getLog"]] });
       queryClient.invalidateQueries({ queryKey: [["workouts", "getHistory"]] });
       router.back();
-      router.back(); // pop log screen + detail screen back to plan
+      router.back();
     } catch (e) {
       console.error("Failed to finish workout", e);
     }
@@ -165,7 +313,10 @@ export default function WorkoutLogScreen() {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          timerActive && { paddingBottom: 100 },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -182,8 +333,8 @@ export default function WorkoutLogScreen() {
             <View style={styles.setHeaderRow}>
               <Text style={[styles.setNum, { color: "#444" }]}>Set</Text>
               <Text style={[styles.setPrescribed, { color: "#444" }]}>Target</Text>
-              <Text style={[styles.setInputLabel]}>Reps</Text>
-              <Text style={[styles.setInputLabel]}>Weight</Text>
+              <Text style={styles.setInputLabel}>Reps</Text>
+              <Text style={styles.setInputLabel}>Weight</Text>
               <View style={styles.logBtnPlaceholder} />
             </View>
 
@@ -224,10 +375,13 @@ export default function WorkoutLogScreen() {
             </View>
 
             <View style={styles.finishRow}>
-              <Text style={styles.finishLabel}>Effort (RPE 1–10)</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.finishLabel}>How hard was it?</Text>
+                <Text style={styles.finishSublabel}>1 = easy  ·  10 = max effort</Text>
+              </View>
               <TextInput
                 style={styles.finishInput}
-                placeholder="e.g. 7"
+                placeholder="1–10"
                 placeholderTextColor="#444"
                 keyboardType="numeric"
                 value={rpe}
@@ -266,6 +420,15 @@ export default function WorkoutLogScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Rest Timer — sticky above keyboard */}
+      {timerActive && (
+        <RestTimerBanner
+          seconds={timerSeconds}
+          total={timerTotal}
+          onSkip={skipTimer}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -340,7 +503,11 @@ const styles = StyleSheet.create({
     minWidth: 44,
     alignItems: "center",
   },
-  logBtnDone: { backgroundColor: "rgba(34,197,94,0.15)", borderWidth: 1, borderColor: "rgba(34,197,94,0.4)" },
+  logBtnDone: {
+    backgroundColor: "rgba(34,197,94,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.4)",
+  },
   logBtnText: { color: "#000", fontSize: 12, fontWeight: "700" },
   logBtnTextDone: { color: "#22C55E" },
 
@@ -365,8 +532,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   finishTitle: { color: "#FFF", fontSize: 16, fontWeight: "700" },
-  finishRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  finishRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   finishLabel: { color: "#888", fontSize: 13 },
+  finishSublabel: { color: "#555", fontSize: 11, marginTop: 2 },
   finishInput: {
     backgroundColor: "#1A1A1A",
     borderWidth: 1,

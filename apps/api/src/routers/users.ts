@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { users } from "../db/schema";
+import { users, userSports } from "../db/schema";
 import { protectedProcedure, router } from "../trpc";
 
 export const usersRouter = router({
@@ -29,6 +29,20 @@ export const usersRouter = router({
 
     return created;
   }),
+
+  saveSports: protectedProcedure
+    .input(z.object({ sportIds: z.array(z.string().uuid()).min(1).max(4) }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.delete(userSports).where(eq(userSports.userId, ctx.user.id));
+      await ctx.db.insert(userSports).values(
+        input.sportIds.map((sportId, i) => ({
+          userId: ctx.user.id,
+          sportId,
+          priority: i + 1,
+        }))
+      );
+      return { saved: input.sportIds.length };
+    }),
 
   updateProfile: protectedProcedure
     .input(
